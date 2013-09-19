@@ -1,0 +1,14 @@
+<?php
+
+/*
+ * @file
+ * Cleanup of used variables.
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function flag_as_uninstall() {
+   variable_del('flag_as_op_flag_allowed');
+   variable_del('flag_as_op_unflag_allowed');
+}

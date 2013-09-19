@@ -1,0 +1,6 @@
+name = Flag As
+description = "Gives functionality to flag nodes as another user."
+configure = admin/config/flag-as
+package = Flags
+dependencies[] = flag
+core = 7.x

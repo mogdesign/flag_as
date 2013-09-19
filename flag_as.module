@@ -1,0 +1,172 @@
+<?php
+/*
+ * @file
+ * Give ability to flag as another user.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function flag_as_permission() {
+  return array(
+    'flag as administer' => array(
+      'title' => t('Administer Flag As settings'),
+    ),
+    'flag as op flag' => array(
+      'title' => t('Flag As'),
+    ),
+    'flag as op unflag' => array(
+      'title' => t('UnFlag As'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function flag_as_menu() {
+  $items['flag-as/%/%/%/%'] = array(
+    'page callback' => 'flag_as_page',
+    'page arguments' => array(1, 2, 3, 4),
+    'access callback' => 'user_access',
+    'access arguments' => array('flag as op flag'),
+    'type' => MENU_CALLBACK,
+    'file' => 'includes/flag_as.page.inc',
+  );
+ $items['fa/autocomplete/%/%'] = array(
+    'page callback' => 'flag_as_autocomplete',
+    'page arguments' => array(2, 3),
+    'access callback' => 'user_access',
+    'access arguments' => array('flag as op flag'),
+    'type' => MENU_CALLBACK,
+    'file' => 'includes/flag_as.page.inc',
+  );
+  $items['admin/config/flag-as'] = array(
+    'title' => 'Flag As Settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('flag_as_settings_form'),
+    'access arguments' => array('flag as administer'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'includes/flag_as.admin.inc',
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_entity_view().
+ *
+ * Handles the 'show_on_entity' flag option.
+ */
+function flag_as_entity_view($entity, $type, $view_mode, $langcode) {
+  // Get all possible flags for this entity-type.
+  if ($type == 'node') {
+    $flags = flag_get_flags($type);
+    $allowed_flags = array();
+    foreach ($flags as $flag) {
+      if (in_array($entity->type, $flag->types)) {
+        $allowed_flags[$flag->fid] = $flag;
+      }
+    }
+    $op_flag_allowed = variable_get('flag_as_op_flag_allowed', array());
+    $op_unflag_allowed = variable_get('flag_as_op_unflag_allowed', array());
+    $flag_as_button = '';
+    $flag_as_list = '';
+    if (!empty($allowed_flags)) {
+      foreach ($allowed_flags as $flag) {
+        // If it is not global flag.
+        if ($flag->global == 0) {
+          if (user_access('flag as op flag') && in_array($flag->fid, $op_flag_allowed)) {
+            $flag_as_button .= drupal_render(drupal_get_form('flag_as_form', $flag, $entity));
+          }
+          if (user_access('flag as op unflag') && in_array($flag->fid, $op_unflag_allowed)) {
+            $data = flag_as_get_unflag_list($type, $entity->nid, $flag);
+            if (count($data) > 0) {
+              $flag_as_list .= theme('table', array('rows' => $data, 'caption' => $flag->title, 'attributes' => array('id' => 'flag-list')));
+            }
+          }
+        }
+      }
+      // TODO: Handle in better way.
+      $entity->content['#suffix'] = $flag_as_button . $flag_as_list;
+    }
+  }
+}
+
+/**
+ * Return formated list.
+ */
+function flag_as_get_unflag_list($content_type, $content_id, $flag) {
+  $data = array();
+  foreach (flag_as_get_flag_data($content_type, $content_id, $flag->fid) as $row) {
+    $uid = $row['uid'];
+    $user= user_load($uid);
+    $data[] = array(
+      l($user->name, 'user/' . $uid),
+      l(t('Unflag'), 'flag-as/unflag/' . $flag->fid . '/' . $content_id . '/' . $uid, array('query' => drupal_get_destination())),
+    );
+  }
+  return $data;
+}
+
+/**
+ * Load flagged content data.
+ */
+function flag_as_get_flag_data($content_type, $content_id, $fid) {
+  $result = db_select('flag_content', 'fc')
+    ->fields('fc')
+    ->condition('content_type', $content_type)
+    ->condition('content_id', $content_id)
+    ->condition('fid', $fid)
+    ->execute();
+  
+  $rows = array();
+  while ($record = $result->fetchAssoc()) {
+    $rows[] = $record;
+  }
+  return $rows;
+}
+
+/**
+ * Form for Flagging.
+ */
+function flag_as_form($form, &$form_state) {
+  $flag = $form_state['build_info']['args'][0];
+  $entity = $form_state['build_info']['args'][1];
+  $form = array();
+   $form['flag_as_row'] = array(
+    '#type' => 'fieldset',
+    '#title' => check_plain($flag->title),
+    '#attributes' => array('class' => array('container-inline')),
+     '#prefix' => '<div class="container-inline">',
+  );
+  $form['flag_as_row']['flag_as_username'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Username'),
+    '#default_value' => '',
+    '#autocomplete_path' => 'fa/autocomplete/' . $flag->fid . '/' . $entity->nid,
+  );
+  $form['flag_as_row']['flag_as_content_id'] = array(
+    '#type' => 'hidden',
+    '#default_value' => $entity->nid,
+  );
+  $form['flag_as_row']['flag_as_flag_name'] = array(
+    '#type' => 'hidden',
+    '#default_value' => $flag->name,
+  );
+  $form['flag_as_row']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Flag As'),
+    '#suffix' => '</div>',
+  );
+  return $form;
+}
+
+/**
+ * Submit handler for flagging.
+ */
+function flag_as_form_submit($form, &$form_state) {
+  $flag_name = $form_state['values']['flag_as_flag_name'];
+  $content_id = $form_state['values']['flag_as_content_id'];
+  $account = user_load_by_name($form_state['values']['flag_as_username']);
+  flag('flag', $flag_name, $content_id, $account);
+}
