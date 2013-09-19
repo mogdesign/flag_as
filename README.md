@@ -2,6 +2,7 @@ Description
 -----------------
 Extension of Drupal Flag module which allows users with permission to flag
 content for another user.
+
 Simple module, which allows to flag Nodes as another users. After installation
 of module it is necessary to configure which flags could be used. Flags are
 configurable on the operation level (flag / unflag). After The flag has proper
